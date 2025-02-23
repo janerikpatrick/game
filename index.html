@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Cha-cha-ching in Purple Lakes</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        canvas {
+            border: 1px solid white;
+            display: block;
+            margin: 0 auto;
+        }
+        body {
+            text-align: center;
+            font-family: 'Poppins', sans-serif;
+            background-color: #000000;
+            color: white;
+        }
+        .info {
+            margin: 20px 0;
+            font-size: 36px;
+        }
+        .treasure {
+            margin: 10px 0;
+            font-size: 24px;
+        }
+        h1 {
+            font-weight: 700;
+        }
+        p {
+            font-weight: 400;
+        }
+        audio {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <h1>Cha-cha-ching in Purple Lakes</h1>
+    <div class="info">
+        <p>Growth: <span id="growth">€100,000</span></p>
+    </div>
+    <canvas id="gameCanvas" width="600" height="400"></canvas>
+    <div class="treasure">
+        <p>Treasure Chest: Case Example: <span id="caseExample">0</span> | Domain Knowledge: <span id="domainKnowledge">0</span> | Tech Knowledge: <span id="techKnowledge">0</span></p>
+    </div>
+    <p>Controls: ← → (Move) | ↑ (Jump/Double Jump)</p>
+    <p>Grow in Purple Lakes! Shrink in Oceans! Watch out for the blue ocean sirens and enemies in the red ocean!</p>
+    <p>Press any control key to start!</p>
+
+    <!-- Audio elements -->
+    <audio id="backgroundMusic" loop>
+        <source src="ChaChaCha.mp3" type="audio/mp3">
+    </audio>
+    <audio id="growSound">
+        <source src="data:audio/wav;base64,UklGRjQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=" type="audio/wav">
+    </audio>
+    <audio id="dieSound">
+        <source src="data:audio/wav;base64,UklGRjYAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=" type="audio/wav">
+    </audio>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const growthElement = document.getElementById('growth');
+        const caseExampleElement = document.getElementById('caseExample');
+        const domainKnowledgeElement = document.getElementById('domainKnowledge');
+        const techKnowledgeElement = document.getElementById('techKnowledge');
+        const backgroundMusic = document.getElementById('backgroundMusic');
+        const growSound = document.getElementById('growSound');
+        const dieSound = document.getElementById('dieSound');
+
+        // Game constants
+        const gravity = 0.5;
+        const jumpForce = -12;
+        const moveSpeed = 3;
+        let mapSpeed = 1;
+        const speedIncrease = 0.0001;
+        const drownAnimationFrames = 30;
+
+        // Siren speeds
+        const sirenSpeeds = [0.5, 1, 2]; // Slow, medium, fast
+        const sineAmplitude = 20; // Amplitude for sideways sine movement
+        let sinePhase = 0; // Phase for sine wave
+
+        // Player (Viking character)
+        const viking = { 
+            x: 50, 
+            y: 300, 
+            vx: 0, 
+            vy: 0, 
+            width: 30,
+            height: 45,
+            growth: 100000,
+            onGround: false,
+            jumpCount: 0,
+            maxJumps: 2,
+            drowning: false,
+            drownFrame: 0,
+            jumping: false,
+            treasure: { caseExample: 0, domainKnowledge: 0, techKnowledge: 0 }
+        };
+
+        // Platforms (Blue Ocean = 0, Red Ocean = 1, Purple Lake = 2)
+        let platforms = [
+            { x: 0, y: 350, width: 200, height: 50, type: 2, growth: 0.1 },
+            { x: 250, y: 320, width: 120, height: 40, type: 1, growth: -0.05 },
+            { x: 400, y: 280, width: 100, height: 30, type: 2, growth: 0.05 },
+            { x: 550, y: 300, width: 130, height: 50, type: 1, growth: -0.1 },
+            { x: 700, y: 260, width: 90, height: 25, type: 2, growth: 0.05 },
+            { x: 850, y: 310, width: 140, height: 45, type: 1, growth: -0.05 },
+            { x: 1000, y: 270, width: 110, height: 35, type: 2, growth: 0.1 }
+        ];
+
+        // Sirens (Blue ocean) and Enemies (Red ocean)
+        let sirens = [];
+        let enemies = [];
+        let sirenSpawnTimer = 0;
+        let enemySpawnTimer = 0;
+        let sirenSpawnInterval = 100;
+        let enemySpawnInterval = 150;
+
+        // Gems (Case Example, Domain Knowledge, Tech Knowledge)
+        let gems = [];
+        let gemSpawnTimer = 0;
+        const gemSpawnInterval = 50;
+
+        let gameRunning = false;
+        let gameLoop = null;
+
+        function startGame() {
+            if (!gameRunning) {
+                gameRunning = true;
+                backgroundMusic.play().catch(e => console.log("Background music failed:", e));
+                gameLoop = setInterval(update, 20);
+            }
+        }
+
+        function update() {
+            if (!gameRunning) return;
+
+            if (viking.drowning) {
+                viking.drownFrame++;
+                if (viking.drownFrame >= drownAnimationFrames) {
+                    gameOver();
+                }
+                draw();
+                return;
+            }
+
+            mapSpeed += speedIncrease;
+            if (mapSpeed > 3) mapSpeed = 3;
+
+            platforms.forEach(platform => {
+                platform.x -= mapSpeed;
+                platform.width = Math.max(50, Math.min(250, platform.width + platform.growth * (Math.random() - 0.5)));
+                platform.height = Math.max(20, Math.min(100, platform.height + platform.growth * (Math.random() - 0.5)));
+            });
+
+            if (platforms[0].x + platforms[0].width < 0) {
+                platforms.shift();
+                const lastPlatform = platforms[platforms.length - 1];
+                const newX = lastPlatform.x + 150 + Math.random() * 50;
+                const newY = lastPlatform.y - 40 + Math.random() * 80;
+                const type = Math.random() < 0.4 ? 2 : Math.random() < 0.7 ? 1 : 0;
+                platforms.push({
+                    x: newX,
+                    y: Math.max(200, Math.min(350, newY)),
+                    width: 50 + Math.random() * 100,
+                    height: 20 + Math.random() * 30,
+                    type,
+                    growth: type === 2 ? 0.1 : type === 1 ? -0.05 : -0.1
+                });
+            }
+
+            sirenSpawnTimer++;
+            if (sirenSpawnTimer >= sirenSpawnInterval) {
+                spawnSiren();
+                sirenSpawnTimer = 0;
+                sirenSpawnInterval = Math.max(20, sirenSpawnInterval - 1);
+            }
+            sirens.forEach(siren => {
+                siren.y -= siren.speed; // Move straight up
+                if (siren.type === 2) { // Fast siren with sine movement
+                    siren.x = siren.startX + Math.sin(siren.y / 20) * sineAmplitude; // Sine based on Y position
+                } else {
+                    siren.x -= mapSpeed; // Non-sine sirens move with map
+                }
+            });
+            sirens = sirens.filter(siren => siren.y > -siren.height);
+
+            enemySpawnTimer++;
+            if (enemySpawnTimer >= enemySpawnInterval) {
+                spawnEnemy();
+                enemySpawnTimer = 0;
+                enemySpawnInterval = Math.max(30, enemySpawnInterval - 1);
+            }
+            enemies.forEach(enemy => {
+                enemy.y -= 1;
+                enemy.x -= mapSpeed;
+            });
+            enemies = enemies.filter(enemy => enemy.y > -enemy.height);
+
+            gemSpawnTimer++;
+            if (gemSpawnTimer >= gemSpawnInterval) {
+                spawnGem();
+                gemSpawnTimer = 0;
+            }
+            gems.forEach(gem => {
+                gem.x -= mapSpeed;
+            });
+            gems = gems.filter(gem => gem.x > -gem.size);
+
+            updatePlayer(viking, growthElement);
+            checkGameOver();
+            draw();
+        }
+
+        function spawnSiren() {
+            const speedType = Math.floor(Math.random() * 3); // 0: slow, 1: medium, 2: fast with sine
+            const x = Math.random() * (canvas.width - 20);
+            sirens.push({
+                x: x,
+                startX: x, // Store starting X for sine movement reference
+                y: canvas.height,
+                width: 20,
+                height: 30,
+                speed: sirenSpeeds[speedType],
+                type: speedType
+            });
+        }
+
+        function spawnEnemy() {
+            const redPlatform = platforms.find(p => p.type === 1);
+            if (redPlatform) {
+                enemies.push({
+                    x: redPlatform.x + Math.random() * (redPlatform.width - 20),
+                    y: redPlatform.y,
+                    width: 20,
+                    height: 30
+                });
+            }
+        }
+
+        function spawnGem() {
+            const purplePlatform = platforms.find(p => p.type === 2);
+            if (purplePlatform) {
+                const inAir = Math.random() < 0.5;
+                const type = Math.random() < 0.33 ? 'caseExample' : Math.random() < 0.66 ? 'domainKnowledge' : 'techKnowledge';
+                gems.push({
+                    x: purplePlatform.x + Math.random() * (purplePlatform.width - 10),
+                    y: inAir ? purplePlatform.y - 20 - Math.random() * 30 : purplePlatform.y - 10,
+                    size: 10,
+                    type: type
+                });
+            }
+        }
+
+        function updatePlayer(player, growthElement) {
+            player.vy += gravity;
+            player.x += player.vx;
+            player.y += player.vy;
+
+            player.onGround = false;
+            let currentPlatform = null;
+            platforms.forEach(platform => {
+                if (player.x + player.width > platform.x && player.x < platform.x + platform.width &&
+                    player.y + player.height > platform.y && player.y + player.height <= platform.y + platform.height + player.vy) {
+                    if (player.vy > 0) {
+                        player.y = platform.y - player.height;
+                        player.vy = 0;
+                        player.onGround = true;
+                        player.jumpCount = 0;
+                        player.jumping = false;
+                        currentPlatform = platform;
+                    }
+                }
+            });
+
+            if (!player.onGround && player.vy < 0) {
+                player.jumping = true;
+            }
+
+            if (player.onGround && currentPlatform) {
+                if (currentPlatform.type === 2) {
+                    player.growth += 5000;
+                    if (Math.random() < 0.1) {
+                        growSound.currentTime = 0;
+                        growSound.play().catch(e => console.log("Grow sound failed:", e));
+                    }
+                } else if (currentPlatform.type === 1) {
+                    player.growth -= 5000;
+                } else {
+                    player.growth -= 5000;
+                }
+            } else if (player.y > canvas.height - player.height / 2) {
+                player.drowning = true;
+                player.vy = 0;
+                player.vx = 0;
+                player.y = canvas.height - player.height / 2;
+                return;
+            }
+
+            sirens.concat(enemies).forEach(entity => {
+                if (player.x + player.width > entity.x && player.x < entity.x + entity.width &&
+                    player.y + player.height > entity.y && player.y < entity.y + entity.height) {
+                    player.growth -= 5000 * 3;
+                    if (Math.random() < 0.1) {
+                        dieSound.currentTime = 0;
+                        dieSound.play().catch(e => console.log("Die sound failed:", e));
+                    }
+                }
+            });
+
+            gems.forEach((gem, index) => {
+                if (player.x + player.width > gem.x && player.x < gem.x + gem.size &&
+                    player.y + player.height > gem.y && player.y < gem.y + gem.size) {
+                    if (gem.type === 'caseExample') player.treasure.caseExample++;
+                    else if (gem.type === 'domainKnowledge') player.treasure.domainKnowledge++;
+                    else if (gem.type === 'techKnowledge') player.treasure.techKnowledge++;
+                    gems.splice(index, 1);
+                    growSound.currentTime = 0;
+                    growSound.play().catch(e => console.log("Grow sound failed:", e));
+                }
+            });
+
+            player.x = Math.max(0, Math.min(canvas.width - player.width, player.x));
+            growthElement.textContent = '€' + player.growth.toLocaleString('en-US', { minimumFractionDigits: 0 });
+            caseExampleElement.textContent = player.treasure.caseExample;
+            domainKnowledgeElement.textContent = player.treasure.domainKnowledge;
+            techKnowledgeElement.textContent = player.treasure.techKnowledge;
+        }
+
+        function draw() {
+            ctx.fillStyle = '#00008B';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            platforms.forEach(platform => {
+                ctx.fillStyle = platform.type === 2 ? '#4B0082' : platform.type === 1 ? '#FF4040' : '#00008B';
+                ctx.fillRect(platform.x, platform.y, platform.width, platform.height);
+            });
+
+            gems.forEach(gem => {
+                ctx.fillStyle = gem.type === 'caseExample' ? '#B9F2FF' : gem.type === 'domainKnowledge' ? '#E0115F' : '#50C878';
+                ctx.beginPath();
+                ctx.moveTo(gem.x + gem.size / 2, gem.y);
+                ctx.lineTo(gem.x + gem.size, gem.y + gem.size / 2);
+                ctx.lineTo(gem.x + gem.size / 2, gem.y + gem.size);
+                ctx.lineTo(gem.x, gem.y + gem.size / 2);
+                ctx.fill();
+            });
+
+            sirens.forEach(siren => {
+                // Head: Nice yellow oval
+                ctx.fillStyle = '#FFFF00'; // Bright yellow for head
+                ctx.beginPath();
+                ctx.ellipse(siren.x + siren.width / 2, siren.y + siren.height / 4, siren.width / 2, siren.height / 3, 0, 0, Math.PI * 2);
+                ctx.fill();
+                // Breasts: Two big round shapes, moved apart and down
+                ctx.fillStyle = '#FFB6C1'; // Light pink for body
+                ctx.beginPath();
+                ctx.arc(siren.x + siren.width / 4 - 2, siren.y + 3 * siren.height / 4, siren.width / 2, 0, Math.PI * 2); // Left breast
+                ctx.arc(siren.x + 3 * siren.width / 4 + 2, siren.y + 3 * siren.height / 4, siren.width / 2, 0, Math.PI * 2); // Right breast
+                ctx.fill();
+            });
+
+            enemies.forEach(enemy => {
+                // Head: Nice yellow oval
+                ctx.fillStyle = '#FFFF00'; // Bright yellow for head
+                ctx.beginPath();
+                ctx.ellipse(enemy.x + enemy.width / 2, enemy.y + enemy.height / 4, enemy.width / 2, enemy.height / 3, 0, 0, Math.PI * 2);
+                ctx.fill();
+                // Breasts: Two big round shapes, moved apart and down
+                ctx.fillStyle = '#FF69B4'; // Hot pink for body
+                ctx.beginPath();
+                ctx.arc(enemy.x + enemy.width / 4 - 2, enemy.y + 3 * enemy.height / 4, enemy.width / 2, 0, Math.PI * 2); // Left breast
+                ctx.arc(enemy.x + 3 * enemy.width / 4 + 2, enemy.y + 3 * enemy.height / 4, enemy.width / 2, 0, Math.PI * 2); // Right breast
+                ctx.fill();
+            });
+
+            drawViking(viking);
+        }
+
+        function drawViking(player) {
+            if (player.drowning) {
+                const sinkOffset = Math.min(player.drownFrame * 2, player.height / 2);
+                const bubbleOffset = player.drownFrame % 10;
+                ctx.fillStyle = 'black';
+                ctx.fillRect(player.x + 3, player.y + 15 + sinkOffset, player.width - 6, player.height - 15 - sinkOffset);
+                ctx.fillStyle = '#FFDAB9';
+                ctx.beginPath();
+                ctx.arc(player.x + player.width / 2, player.y + 7 + sinkOffset, 7, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = 'gray';
+                ctx.beginPath();
+                ctx.moveTo(player.x + 3, player.y + 7 + sinkOffset);
+                ctx.lineTo(player.x + player.width - 3, player.y + 7 + sinkOffset);
+                ctx.lineTo(player.x + player.width / 2, player.y - 7 + sinkOffset);
+                ctx.fill();
+                ctx.fillStyle = 'white';
+                ctx.fillRect(player.x, player.y - 3 + sinkOffset, 6, 3);
+                ctx.fillRect(player.x + player.width - 6, player.y - 3 + sinkOffset, 6, 3);
+                ctx.fillStyle = 'black';
+                ctx.fillRect(player.x + 3, player.y + player.height - 15 + sinkOffset, 9, Math.max(0, 15 - sinkOffset));
+                ctx.fillRect(player.x + player.width - 12, player.y + player.height - 15 + sinkOffset, 9, Math.max(0, 15 - sinkOffset));
+                ctx.fillStyle = '#39FF14';
+                ctx.fillRect(player.x - 5, player.y + 10 + sinkOffset, 5, Math.max(0, 15 - sinkOffset));
+                ctx.fillRect(player.x + player.width, player.y + 10 + sinkOffset, 5, Math.max(0, 15 - sinkOffset));
+                ctx.fillStyle = 'white';
+                ctx.beginPath();
+                ctx.arc(player.x + player.width / 2, player.y - bubbleOffset, 3, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(player.x + player.width / 2 - 5, player.y - bubbleOffset - 5, 2, 0, Math.PI * 2);
+                ctx.fill();
+            } else {
+                ctx.fillStyle = 'black';
+                ctx.fillRect(player.x + 3, player.y + 15, player.width - 6, player.height - 15);
+                ctx.fillStyle = '#FFDAB9';
+                ctx.beginPath();
+                ctx.arc(player.x + player.width / 2, player.y + 7, 7, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = 'gray';
+                ctx.beginPath();
+                ctx.moveTo(player.x + 3, player.y + 7);
+                ctx.lineTo(player.x + player.width - 3, player.y + 7);
+                ctx.lineTo(player.x + player.width / 2, player.y - 7);
+                ctx.fill();
+                ctx.fillStyle = 'white';
+                ctx.fillRect(player.x, player.y - 3, 6, 3);
+                ctx.fillRect(player.x + player.width - 6, player.y - 3, 6, 3);
+                ctx.fillStyle = 'black';
+                ctx.fillRect(player.x + 3, player.y + player.height - 15, 9, 15);
+                ctx.fillRect(player.x + player.width - 12, player.y + player.height - 15, 9, 15);
+                ctx.fillStyle = '#39FF14';
+                const armY = player.jumping ? player.y - 5 : player.y + 10;
+                const leftArmX = player.jumping ? player.x - 10 : player.x - 5;
+                const rightArmX = player.jumping ? player.x + player.width + 5 : player.x + player.width;
+                ctx.fillRect(leftArmX, armY, 5, 15);
+                ctx.fillRect(rightArmX, armY, 5, 15);
+            }
+        }
+
+        function jump(player) {
+            if (player.jumpCount < player.maxJumps) {
+                player.vy = jumpForce;
+                player.jumpCount++;
+                player.jumping = true;
+            }
+        }
+
+        function gameOver() {
+            clearInterval(gameLoop);
+            gameRunning = false;
+            backgroundMusic.pause();
+            backgroundMusic.currentTime = 0;
+            dieSound.currentTime = 0;
+            dieSound.play().catch(e => console.log("Die sound failed:", e));
+            alert(`Game Over! You drowned!\nFinal Growth: €${viking.growth.toLocaleString('en-US', { minimumFractionDigits: 0 })}\nTreasure: ${viking.treasure.caseExample} Case Examples, ${viking.treasure.domainKnowledge} Domain Knowledge, ${viking.treasure.techKnowledge} Tech Knowledge`);
+            resetGame();
+        }
+
+        function checkGameOver() {
+            if (viking.growth <= 0 && !viking.drowning) {
+                gameOver();
+            }
+        }
+
+        function resetGame() {
+            viking.x = 50; viking.y = 300; viking.vx = 0; viking.vy = 0;
+            viking.growth = 100000; viking.onGround = false; viking.jumpCount = 0; viking.drowning = false; viking.drownFrame = 0; viking.jumping = false;
+            viking.treasure = { caseExample: 0, domainKnowledge: 0, techKnowledge: 0 };
+            platforms = [
+                { x: 0, y: 350, width: 200, height: 50, type: 2, growth: 0.1 },
+                { x: 250, y: 320, width: 120, height: 40, type: 1, growth: -0.05 },
+                { x: 400, y: 280, width: 100, height: 30, type: 2, growth: 0.05 },
+                { x: 550, y: 300, width: 130, height: 50, type: 1, growth: -0.1 },
+                { x: 700, y: 260, width: 90, height: 25, type: 2, growth: 0.05 },
+                { x: 850, y: 310, width: 140, height: 45, type: 1, growth: -0.05 },
+                { x: 1000, y: 270, width: 110, height: 35, type: 2, growth: 0.1 }
+            ];
+            sirens = [];
+            enemies = [];
+            gems = [];
+            sirenSpawnTimer = 0;
+            enemySpawnTimer = 0;
+            gemSpawnTimer = 0;
+            sirenSpawnInterval = 100;
+            enemySpawnInterval = 150;
+            mapSpeed = 1;
+            growthElement.textContent = '€100,000';
+            caseExampleElement.textContent = '0';
+            domainKnowledgeElement.textContent = '0';
+            techKnowledgeElement.textContent = '0';
+            gameRunning = false;
+            if (gameLoop) clearInterval(gameLoop);
+            gameLoop = null;
+            draw();
+        }
+
+        document.addEventListener('keydown', (e) => {
+            e.preventDefault();
+            startGame();
+
+            if (viking.drowning) return;
+
+            switch (e.key) {
+                case 'ArrowLeft': viking.vx = -moveSpeed; break;
+                case 'ArrowRight': viking.vx = moveSpeed; break;
+                case 'ArrowUp': jump(viking); break;
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') viking.vx = 0;
+        });
+
+        // Initial draw
+        draw();
+    </script>
+</body>
+</html>
