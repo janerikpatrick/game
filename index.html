@@ -8,12 +8,16 @@
             border: 1px solid white;
             display: block;
             margin: 0 auto;
+            touch-action: none; /* Prevents default touch behaviors like scrolling */
         }
         body {
             text-align: center;
             font-family: 'Poppins', sans-serif;
             background-color: #000000;
             color: white;
+            margin: 0;
+            padding: 0;
+            overflow: hidden; /* Prevents scrolling on mobile */
         }
         .info {
             margin: 20px 0;
@@ -43,9 +47,9 @@
     <div class="treasure">
         <p>Treasure Chest: Case Example: <span id="caseExample">0</span> | Domain Knowledge: <span id="domainKnowledge">0</span> | Tech Knowledge: <span id="techKnowledge">0</span></p>
     </div>
-    <p>Controls: ← → (Move) | ↑ (Jump/Double Jump)</p>
+    <p>Controls: ← → (Move) | ↑ (Jump/Double Jump) | Tap Screen (Jump on Mobile)</p>
     <p>Grow in Purple Lakes! Shrink in Oceans! Watch out for the blue ocean sirens and enemies in the red ocean!</p>
-    <p>Press any control key to start!</p>
+    <p>Press any control key or tap screen to start!</p>
 
     <!-- Audio elements -->
     <audio id="backgroundMusic" loop>
@@ -350,30 +354,26 @@
             });
 
             sirens.forEach(siren => {
-                // Head: Nice yellow oval
-                ctx.fillStyle = '#FFFF00'; // Bright yellow for head
+                ctx.fillStyle = '#FFFF00';
                 ctx.beginPath();
                 ctx.ellipse(siren.x + siren.width / 2, siren.y + siren.height / 4, siren.width / 2, siren.height / 3, 0, 0, Math.PI * 2);
                 ctx.fill();
-                // Breasts: Two big round shapes, moved apart and down
-                ctx.fillStyle = '#FFB6C1'; // Light pink for body
+                ctx.fillStyle = '#FFB6C1';
                 ctx.beginPath();
-                ctx.arc(siren.x + siren.width / 4 - 2, siren.y + 3 * siren.height / 4, siren.width / 2, 0, Math.PI * 2); // Left breast
-                ctx.arc(siren.x + 3 * siren.width / 4 + 2, siren.y + 3 * siren.height / 4, siren.width / 2, 0, Math.PI * 2); // Right breast
+                ctx.arc(siren.x + siren.width / 4 - 2, siren.y + 3 * siren.height / 4, siren.width / 2, 0, Math.PI * 2);
+                ctx.arc(siren.x + 3 * siren.width / 4 + 2, siren.y + 3 * siren.height / 4, siren.width / 2, 0, Math.PI * 2);
                 ctx.fill();
             });
 
             enemies.forEach(enemy => {
-                // Head: Nice yellow oval
-                ctx.fillStyle = '#FFFF00'; // Bright yellow for head
+                ctx.fillStyle = '#FFFF00';
                 ctx.beginPath();
                 ctx.ellipse(enemy.x + enemy.width / 2, enemy.y + enemy.height / 4, enemy.width / 2, enemy.height / 3, 0, 0, Math.PI * 2);
                 ctx.fill();
-                // Breasts: Two big round shapes, moved apart and down
-                ctx.fillStyle = '#FF69B4'; // Hot pink for body
+                ctx.fillStyle = '#FF69B4';
                 ctx.beginPath();
-                ctx.arc(enemy.x + enemy.width / 4 - 2, enemy.y + 3 * enemy.height / 4, enemy.width / 2, 0, Math.PI * 2); // Left breast
-                ctx.arc(enemy.x + 3 * enemy.width / 4 + 2, enemy.y + 3 * enemy.height / 4, enemy.width / 2, 0, Math.PI * 2); // Right breast
+                ctx.arc(enemy.x + enemy.width / 4 - 2, enemy.y + 3 * enemy.height / 4, enemy.width / 2, 0, Math.PI * 2);
+                ctx.arc(enemy.x + 3 * enemy.width / 4 + 2, enemy.y + 3 * enemy.height / 4, enemy.width / 2, 0, Math.PI * 2);
                 ctx.fill();
             });
 
@@ -497,6 +497,7 @@
             draw();
         }
 
+        // Keyboard controls
         document.addEventListener('keydown', (e) => {
             e.preventDefault();
             startGame();
@@ -512,6 +513,38 @@
 
         document.addEventListener('keyup', (e) => {
             if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') viking.vx = 0;
+        });
+
+        // Mobile touch controls
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            startGame();
+            if (!viking.drowning) {
+                jump(viking);
+            }
+        });
+
+        // Optional: Add touchmove for continuous movement (left/right)
+        let touchStartX = null;
+        canvas.addEventListener('touchstart', (e) => {
+            touchStartX = e.touches[0].clientX;
+        });
+
+        canvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            if (!gameRunning || viking.drowning) return;
+            const touchX = e.touches[0].clientX;
+            if (touchX < touchStartX - 20) {
+                viking.vx = -moveSpeed; // Move left
+            } else if (touchX > touchStartX + 20) {
+                viking.vx = moveSpeed; // Move right
+            }
+        });
+
+        canvas.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            viking.vx = 0; // Stop moving when touch ends
+            touchStartX = null;
         });
 
         // Initial draw
